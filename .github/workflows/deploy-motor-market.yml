@@ -1,4 +1,4 @@
-name: Build, Test & Deploy MotorMarket to Render
+name: Build, Test & Deploy MotorMarket
 
 on:
   push:
@@ -8,8 +8,23 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: user
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: motor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U user -d motor"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     env:
-      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DATABASE_URL: postgresql://user:password@localhost:5432/motor
       JWT_SECRET: ${{ secrets.JWT_SECRET }}
       STRIPE_SECRET: ${{ secrets.STRIPE_SECRET }}
       STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -23,19 +38,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Install backend deps
+
+      # Backend
+      - name: Install backend dependencies
         working-directory: backend
         run: npm ci
+
       - name: Run backend migrations
         working-directory: backend
         run: npx sequelize-cli db:migrate || echo "Migrations done"
-      - name: Install frontend deps
+
+      # Frontend
+      - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -45,11 +67,14 @@ jobs:
     needs: build-and-test
     env:
       RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
-      BACKEND_SERVICE_ID: <BACKEND_SERVICE_ID>
-      FRONTEND_SERVICE_ID: <FRONTEND_SERVICE_ID>
+      BACKEND_SERVICE_ID: ${{ secrets.BACKEND_SERVICE_ID }}
+      FRONTEND_SERVICE_ID: ${{ secrets.FRONTEND_SERVICE_ID }}
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Deploy Backend
         run: render deploy service $BACKEND_SERVICE_ID --api-key $RENDER_API_KEY
+
       - name: Deploy Frontend
         run: render deploy service $FRONTEND_SERVICE_ID --api-key $RENDER_API_KEY
